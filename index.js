@@ -1,9 +1,10 @@
 import express from "express";
 import cors from "cors";
-import { Redis } from "ioredis";
-import { connectDB } from "./db.js";
 
-const redis = new Redis();
+import { connectDB } from "./db.js";
+import { catchAsyc } from "./utils/catchAsync.js";
+import { cache } from "./middlewares/cacheEntry.js";
+import { redis } from "./redisClient.js";
 
 const app = express();
 
@@ -11,22 +12,6 @@ app.use(cors());
 app.use(express.json());
 
 let pool;
-
-const catchAsyc = (fn) => {
-    return (req, res, next) => {
-        fn(req, res, next).catch((err) => next(err));
-    };
-};
-
-const cache = catchAsyc(async (req, res, next) => {
-    const cachedData = await redis.get("data");
-    if (cachedData) {
-        console.log("using cached data");
-        const parseJson = JSON.parse(cachedData);
-        return res.status(200).json({ data: parseJson });
-    }
-    next();
-});
 
 const getLanguageIds = {
     Cpp: 54,
@@ -43,7 +28,9 @@ app.get(
     catchAsyc(async (req, res, next) => {
         const [row] = await pool.query("SELECT * FROM code");
         const jsonString = JSON.stringify(row);
-        await redis.set("data", jsonString);
+
+        if (redis.status === "ready") await redis.set("data", jsonString);
+
         res.status(200).json({ data: row });
     })
 );
@@ -65,8 +52,8 @@ app.post(
             output,
         ]);
 
-        // remove cache when new enry is added
-        await redis.del("data");
+        // remove cache when new entry is added
+        if (redis.status === "ready") await redis.del("data");
 
         res.status(201).json({ message: "Data inserted successfully" });
     })
@@ -164,5 +151,6 @@ connectDB()
         });
     })
     .catch((err) => {
+        console.log(err);
         console.log("Error connecting to databse.");
     });
