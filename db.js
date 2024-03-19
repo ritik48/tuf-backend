@@ -19,6 +19,7 @@ export const connectDB = async () => {
         username VARCHAR(255) NOT NULL,
         language VARCHAR(255) NOT NULL,
         input TEXT NOT NULL,
+        output TEXT NOT NULL,
         source_code TEXT NOT NULL,
         created TIMESTAMP NOT NULL DEFAULT NOW()
     )`);
