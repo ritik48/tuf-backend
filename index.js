@@ -1,7 +1,9 @@
 import express from "express";
 import cors from "cors";
-
+import { Redis } from "ioredis";
 import { connectDB } from "./db.js";
+
+const redis = new Redis();
 
 const app = express();
 
@@ -16,6 +18,16 @@ const catchAsyc = (fn) => {
     };
 };
 
+const cache = catchAsyc(async (req, res, next) => {
+    const cachedData = await redis.get("data");
+    if (cachedData) {
+        console.log("using cached data");
+        const parseJson = JSON.parse(cachedData);
+        return res.status(200).json({ data: parseJson });
+    }
+    next();
+});
+
 const getLanguageIds = {
     Cpp: 54,
     Javascript: 93,
@@ -27,13 +39,12 @@ const getLanguageIds = {
 
 app.get(
     "/",
+    cache,
     catchAsyc(async (req, res, next) => {
-        try {
-            const [row] = await pool.query("SELECT * FROM code");
-            res.status(200).json({ data: row });
-        } catch (error) {
-            next(error);
-        }
+        const [row] = await pool.query("SELECT * FROM code");
+        const jsonString = JSON.stringify(row);
+        await redis.set("data", jsonString);
+        res.status(200).json({ data: row });
     })
 );
 
@@ -54,6 +65,9 @@ app.post(
             output,
         ]);
 
+        // remove cache when new enry is added
+        await redis.del("data");
+
         res.status(201).json({ message: "Data inserted successfully" });
     })
 );
@@ -62,9 +76,7 @@ app.post(
     "/submissions",
     catchAsyc(async (req, res, next) => {
         const { code, stdin, language } = req.body;
-        console.log(req.body);
         let language_id = getLanguageIds[language];
-        console.log("id = ", language_id);
 
         const response = await fetch(
             `https://judge0-ce.p.rapidapi.com/submissions?wait=true&base64_encoded=true&fields=*`,
@@ -73,8 +85,7 @@ app.post(
                 headers: {
                     "content-type": "application/json",
                     "Content-Type": "application/json",
-                    "X-RapidAPI-Key":
-                        process.env.RAPIDAPI_KEY,
+                    "X-RapidAPI-Key": process.env.RAPIDAPI_KEY,
                     "X-RapidAPI-Host": process.env.RAPIDAPI_HOST,
                 },
                 body: JSON.stringify({
@@ -105,8 +116,7 @@ app.get(
             `https://judge0-ce.p.rapidapi.com/submissions/${id}?base64_encoded=true&fields=*`,
             {
                 headers: {
-                    "X-RapidAPI-Key":
-                        process.env.RAPIDAPI_KEY,
+                    "X-RapidAPI-Key": process.env.RAPIDAPI_KEY,
                     "X-RapidAPI-Host": process.env.RAPIDAPI_HOST,
                 },
             }
