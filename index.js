@@ -84,10 +84,18 @@ app.post(
         );
 
         const data = await response.json();
+        let errorMessage;
+        if (data.compile_output) {
+            errorMessage = atob(data.compile_output);
+        } else if (data.stderr) {
+            errorMessage = atob(data.stderr);
+        }
+
         const responseJson = {
             stdout: data.stdout ? atob(data.stdout) : null,
             accepted: data.status.id === 3,
             message: data.status.description,
+            errorMessage,
         };
         console.log(data);
         res.status(201).json(responseJson);
